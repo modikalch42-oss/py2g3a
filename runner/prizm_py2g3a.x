@@ -1,0 +1,62 @@
+/* libfxcg's toolchain/prizm.x with one extra section for py2g3a. */
+OUTPUT_FORMAT(binary)
+OUTPUT_ARCH(sh3)
+ 
+/* Entry point.  Not really important here, since doing binary output */
+ENTRY(initialize)
+ 
+MEMORY
+{
+        /* Loads code at 300000, skips g3a header */
+        rom (rx) : o = 0x00300000, l = 1024k
+        ram (rwx) : o = 0x08100004, l = 64k  /* pretty safe guess */
+        ilram (rwx) : o = 0xE5200000, l = 4k /* According to http://www.cemetech.net/forum/viewtopic.php?t=9334 */
+}
+ 
+SECTIONS
+{
+        /* Code, in ROM */
+        .text : {
+                *(.pretext)     /* init stuff */
+                *(.text)
+                *(.text.*)
+        } > rom
+
+        .ilram : {
+                _ilramld = LOADADDR(.ilram) ;
+                _silram = . ;
+                *(.ilram)
+                *(.ilram.*)
+                _eilram = . ;
+        } > ilram AT> rom
+       
+        /* Read-only data, in ROM */
+        .rodata : {
+                *(.rodata)
+                *(.rodata.*)
+        } > rom
+       
+        /* RW initialized data, VMA in RAM but LMA in ROM */
+        .data : ALIGN(4) {
+                _datald = LOADADDR(.data) ;
+                _sdata = . ;
+                *(.data)
+                *(.data.*);
+                _edata = . ;
+        } >ram AT>rom
+       
+        /* py2g3a: the script slot must be the very last thing in the
+         * file, so py2g3a.py can append a script of any length. */
+        .py2g3a_slot : ALIGN(4) {
+                KEEP(*(.py2g3a_slot))
+        } > rom
+
+        /* Uninitialized data (fill with 0), in RAM */
+        .bss : ALIGN(4) {
+                _bbss = . ;
+                *(.bss)
+                *(.bss*)
+                *(COMMON)
+                _ebss = . ;
+        } >ram
+}
