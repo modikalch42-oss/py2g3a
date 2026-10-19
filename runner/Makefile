@@ -30,7 +30,7 @@ MPY_SRC := $(filter-out $(MPY)/py/nlrx%.c $(MPY)/py/nlrpowerpc.c $(MPY)/py/nlrmi
            $(MPY)/extmod/modrandom.c \
            $(MPY)/shared/runtime/gchelper_generic.c \
            $(filter-out %/thumb_vfp_sqrt.c, $(wildcard $(MPY)/lib/libm_dbl/*.c))
-OWN_SRC := main.c math_extra.c
+OWN_SRC := main.c casioplot.c math_extra.c
 
 OBJ := $(patsubst $(MPY)/%.c,$(BUILD)/mpy/%.o,$(MPY_SRC)) $(patsubst %.c,$(BUILD)/%.o,$(OWN_SRC))
 
@@ -41,7 +41,7 @@ all: runner.g3a
 
 # Step 1: generate MicroPython's headers (qstrs, module table...) using the
 # host compiler, exactly as MicroPython's "embed" port does.
-$(GENHDR): mpconfigport.h casio_hal.h genhdr.mk
+$(GENHDR): mpconfigport.h casio_hal.h genhdr.mk casioplot.c
 	$(MAKE) -f genhdr.mk MICROPYTHON_TOP=$(abspath $(MPY)) BUILD=$(BUILD)/embed
 
 # Step 2: cross-compile.

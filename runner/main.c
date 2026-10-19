@@ -46,6 +46,10 @@ static uint32_t crc32(const uint8_t *p, uint32_t n) {
     return ~c;
 }
 
+// casioplot.c: while a script is drawing graphics, keep the console hidden.
+extern int casioplot_active;
+void casioplot_reset(void);
+
 // --------------------------------------------------------------------------
 // Text console: 21x8 characters (the OS's PrintXY grid), with scrollback.
 // --------------------------------------------------------------------------
@@ -117,6 +121,9 @@ static void console_draw(void) {
 
 // Redraw at most every ~60 ms so printing in a loop stays fast.
 static void console_maybe_draw(void) {
+    if (casioplot_active) {
+        return;
+    }
     if (dirty && (unsigned)(RTC_GetTicks() - last_draw) >= 8) {
         console_draw();
     }
@@ -206,7 +213,8 @@ unsigned int casio_random_seed(void) {
 // Called by the VM every few thousand bytecodes.
 void casio_poll(void) {
     int k = PRGM_GetKey();
-    if (k == KEY_PRGM_ACON || k == KEY_PRGM_EXIT) {
+    // EXIT is a normal game key once casioplot is in use; AC/ON always stops.
+    if (k == KEY_PRGM_ACON || (k == KEY_PRGM_EXIT && !casioplot_active)) {
         mp_sched_keyboard_interrupt();
     }
     console_maybe_draw();
@@ -240,6 +248,7 @@ static const char *key_text(int key) {
 int casio_readline(vstr_t *line, const char *prompt) {
     console_write(prompt, strlen(prompt));
     const char *saved = status_msg;
+    casioplot_active = 0;   // the text screen replaces any graphics
     status_msg = "Type, then EXE";
     cursor_on = 1;
     for (;;) {
@@ -302,7 +311,9 @@ static void print_str(const char *s) {
     console_write(s, strlen(s));
 }
 
-static void run_script(const char *src, size_t len, void *heap, size_t heap_size, void *stack_top) {
+// Returns 1 if the script ended with an error (or was stopped).
+static int run_script(const char *src, size_t len, void *heap, size_t heap_size, void *stack_top) {
+    int failed = 0;
     mp_stack_set_top(stack_top);
     mp_stack_set_limit(48 * 1024);
     gc_init(heap, (uint8_t *)heap + heap_size);
@@ -317,6 +328,7 @@ static void run_script(const char *src, size_t len, void *heap, size_t heap_size
         mp_call_function_0(fun);
         nlr_pop();
     } else {
+        failed = 1;
         mp_obj_t exc = (mp_obj_t)nlr.ret_val;
         if (mp_obj_is_subclass_fast(MP_OBJ_FROM_PTR(mp_obj_get_type(exc)),
                                     MP_OBJ_FROM_PTR(&mp_type_KeyboardInterrupt))) {
@@ -329,6 +341,7 @@ static void run_script(const char *src, size_t len, void *heap, size_t heap_size
         }
     }
     mp_deinit();
+    return failed;
 }
 
 int main(void) {
@@ -382,15 +395,29 @@ int main(void) {
 
     for (;;) {
         console_reset();
+        casioplot_reset();
         status_msg = "Running  AC:stop";
         console_draw();
-        run_script(src, len, heap, heap_size, &stack_marker);
+        int failed = run_script(src, len, heap, heap_size, &stack_marker);
 
         // Finished: let the user read the output, scroll, or run again.
+        // A script that drew graphics keeps its picture on screen; any key
+        // other than EXE then switches to the text output.
         status_msg = "EXE:again  MENU:quit";
+        int show_graphics = casioplot_active && !failed;
         for (;;) {
-            console_draw();
+            if (show_graphics) {
+                DefineStatusMessage((char *)status_msg, 1, 0, 0);
+                DisplayStatusArea();
+                Bdisp_PutDisp_DD();
+            } else {
+                console_draw();
+            }
             GetKey(&key);
+            if (show_graphics && key != KEY_CTRL_EXE) {
+                show_graphics = 0;
+                continue;
+            }
             if (key == KEY_CTRL_EXE) {
                 break;
             } else if (key == KEY_CTRL_UP) {

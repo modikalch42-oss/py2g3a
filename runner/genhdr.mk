@@ -3,6 +3,8 @@
 
 # modrandom.c lives in extmod/, which the embed port doesn't scan by default.
 SRC_QSTR += extmod/modrandom.c
+# Our own modules (casioplot, time).
+SRC_QSTR += casioplot.c
 
 include $(MICROPYTHON_TOP)/py/mkenv.mk
 include $(TOP)/py/py.mk
